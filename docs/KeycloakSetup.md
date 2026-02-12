@@ -536,3 +536,188 @@ Si vous documentez pour un wiki interne, prendre une capture par écran :
 7. User `admin` role mapping
 8. JWT décodé avec `realm_access.roles`
 
+
+
+---
+
+## Schéma Mermaid détaillé — interconnexions des ressources Keycloak
+
+```mermaid
+flowchart TD
+    %% =========================
+    %% CONTEXTE GLOBAL
+    %% =========================
+    A[Utilisateur
+admin/editor/reader] -->|1. Login/password grant| KC[(Keycloak 26)]
+    SA[Service Account
+client medical-api] -->|1b. client_credentials| KC
+    API[Spring Boot medical-api
+Resource Server JWT] -->|2. Vérifie iss + JWK| KC
+
+    %% =========================
+    %% REALM & CLIENT
+    %% =========================
+    subgraph REALM[Realm: Medical_API]
+      direction TB
+      R1[Realm Settings
+enabled=true]
+
+      subgraph CLIENT[Client OIDC: medical-api]
+        direction TB
+        C1[clientId=medical-api
+publicClient=false
+(confidential)]
+        C2[Credentials
+client_secret]
+        C3[Flows
+standard=OFF
+direct_grants=ON
+service_accounts=ON]
+        C4[Authorization Services=ON
+(Resource Server)]
+      end
+
+      R1 --> C1
+      C1 --> C2
+      C1 --> C3
+      C1 --> C4
+
+      %% =========================
+      %% ROLES
+      %% =========================
+      subgraph ROLES[Realm Roles]
+        direction TB
+        RA[ROLE_MEDICAL_ADMIN]
+        RE[ROLE_MEDICAL_EDITOR]
+        RR[ROLE_MEDICAL_READER]
+      end
+
+      %% =========================
+      %% USERS
+      %% =========================
+      subgraph USERS[Users]
+        direction TB
+        U1[admin]
+        U2[editor]
+        U3[reader]
+      end
+
+      U1 -->|role mapping| RA
+      U2 -->|role mapping| RE
+      U3 -->|role mapping| RR
+
+      %% =========================
+      %% AUTHZ: SCOPES + RESOURCE
+      %% =========================
+      subgraph AUTHZ[Authorization Services / Resource Server]
+        direction TB
+        S1[Scope create]
+        S2[Scope read]
+        S3[Scope update]
+        S4[Scope delete]
+
+        RES[Resource medical-resource
+type=MedicalRessource
+uri=/api/medical-ressources/*]
+
+        RES --> S1
+        RES --> S2
+        RES --> S3
+        RES --> S4
+      end
+
+      C4 --> AUTHZ
+
+      %% =========================
+      %% POLICIES (ROLE-BASED)
+      %% =========================
+      subgraph POLICIES[Policies - type: role]
+        direction TB
+        P1[Admin Role Policy]
+        P2[Editor Role Policy]
+        P3[Reader Role Policy]
+      end
+
+      RA --> P1
+      RE --> P2
+      RR --> P3
+
+      %% =========================
+      %% PERMISSIONS (SCOPE-BASED)
+      %% =========================
+      subgraph PERMS[Permissions - type: scope]
+        direction TB
+        PM1[Medical Create Permission]
+        PM2[Medical Read Permission]
+        PM3[Medical Update Permission]
+        PM4[Medical Delete Permission]
+      end
+
+      %% Scope bindings
+      S1 --> PM1
+      S2 --> PM2
+      S3 --> PM3
+      S4 --> PM4
+
+      %% Policy bindings
+      P1 --> PM1
+      P2 --> PM1
+
+      P1 --> PM2
+      P2 --> PM2
+      P3 --> PM2
+
+      P1 --> PM3
+      P2 --> PM3
+
+      P1 --> PM4
+
+      %% Resource bindings
+      RES --> PM1
+      RES --> PM2
+      RES --> PM3
+      RES --> PM4
+
+      %% =========================
+      %% TOKEN MAPPERS
+      %% =========================
+      subgraph MAPPERS[Protocol Mappers / Claims JWT]
+        direction TB
+        M1[realm roles -> realm_access.roles]
+        M2[permissions -> claim permissions
+(optionnel/custom)]
+      end
+
+      RA --> M1
+      RE --> M1
+      RR --> M1
+      PM1 --> M2
+      PM2 --> M2
+      PM3 --> M2
+      PM4 --> M2
+    end
+
+    %% =========================
+    %% TOKEN & API AUTHORIZATION
+    %% =========================
+    KC -->|3. Access Token JWT
+iss, realm_access.roles, permissions| A
+    KC -->|3b. Access Token JWT| SA
+
+    A -->|4. Bearer token| API
+    SA -->|4b. Bearer token| API
+
+    API -->|5. Spring Security mapping| CHK{Authority check}
+
+    CHK -->|POST -> permission:medical:create| OK1[201/403]
+    CHK -->|GET -> permission:medical:read| OK2[200/403]
+    CHK -->|PUT/PATCH -> permission:medical:update| OK3[200/403]
+    CHK -->|DELETE -> permission:medical:delete| OK4[204/403]
+```
+
+### Lecture rapide du schéma
+- Le **Realm `Medical_API`** contient les rôles, utilisateurs et le client `medical-api`.
+- Le client active **Authorization Services** pour définir la combinaison **Resource + Scopes + Policies + Permissions**.
+- Les rôles sont injectés dans `realm_access.roles`, puis (optionnellement) les permissions dans un claim `permissions`.
+- L’API Spring valide le JWT puis applique le contrôle d’accès par authority : `permission:medical:*`.
+
