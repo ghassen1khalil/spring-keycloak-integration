@@ -4,13 +4,13 @@ info:
   version: 1.0.0
   description: Contract-first API for managing medical resources.
 servers:
-  - url: /api
+  - url: http://localhost:8080
 tags:
   - name: MedicalRessource
 security:
   - bearerAuth: []
 paths:
-  /medical-ressources:
+  /api/medical-ressources:
     post:
       tags: [MedicalRessource]
       operationId: createMedicalRessource
@@ -76,7 +76,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /medical-ressources/{id}:
+  /api/medical-ressources/{id}:
     get:
       tags: [MedicalRessource]
       operationId: getMedicalRessourceById
